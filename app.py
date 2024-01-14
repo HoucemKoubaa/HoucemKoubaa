@@ -1,48 +1,56 @@
 from flask import Flask, request, jsonify
-import mysql.connector
+from flask_cors import CORS
+import sqlite3
 
 app = Flask(__name__)
+CORS(app)
 
-# Configuration de la base de données
-db = mysql.connector.connect(
-    host="localhost",
-    user="your_username",
-    password="your_password",
-    database="tp_cicd"
-)
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
 
-# Endpoint pour ajouter un utilisateur
 @app.route('/adduser', methods=['POST'])
 def add_user():
-    login = request.json['login']
-    pwd = request.json['pwd']
-    nom = request.json['nom']
-    prenom = request.json['prenom']
+    data = request.get_json()
+    conn = sqlite3.connect('tp_cicd.db')
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
 
-    cursor = db.cursor()
-    query = "INSERT INTO user (login, pwd, nom, prenom) VALUES (%s, %s, %s, %s)"
-    values = (login, pwd, nom, prenom)
-    cursor.execute(query, values)
-    db.commit()
+    login = data.get('login')
+    pwd = data.get('pwd')
+    nom = data.get('nom')
+    prenom = data.get('prenom')
+    
+    if login and pwd and nom and prenom:
+        cursor.execute("INSERT INTO user (login, pwd, nom, prenom) VALUES (?, ?, ?, ?)",
+                       (login, pwd, nom, prenom))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Utilisateur ajouté"}), 201
+    else:
+        return jsonify({"message": "Missing required fields"}), 400
 
-    return jsonify(message="Utilisateur ajouté avec succès")
-
-# Endpoint pour vérifier login/pwd et renvoyer (nom, prenom) si l'utilisateur existe
 @app.route('/checkuser', methods=['POST'])
 def check_user():
-    login = request.json['login']
-    pwd = request.json['pwd']
+    data = request.get_json()
+    conn = sqlite3.connect('tp_cicd.db')
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
 
-    cursor = db.cursor()
-    query = "SELECT nom, prenom FROM user WHERE login = %s AND pwd = %s"
-    values = (login, pwd)
-    cursor.execute(query, values)
-    result = cursor.fetchone()
+    login = data.get('login')
+    pwd = data.get('pwd')
 
-    if result:
-        return jsonify(nom=result[0], prenom=result[1])
+    if login and pwd:
+        user = cursor.execute('SELECT * FROM user WHERE login = ? AND pwd = ?', (login, pwd)).fetchone()
+
+        if user:
+            return jsonify({"nom": user['nom'], "prenom": user['prenom']}), 200
+        else:
+            return jsonify({"message": "Utilisateur introuvable"}), 404
     else:
-        return jsonify(message="Utilisateur non trouvé")
+        return jsonify({"message": "Missing required fields"}), 400
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
